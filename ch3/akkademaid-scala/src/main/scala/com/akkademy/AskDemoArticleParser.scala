@@ -1,9 +1,10 @@
 package com.akkademy
 
 import akka.actor.Actor
+import akka.event.Logging
 import akka.pattern.ask
 import akka.util.Timeout
-import com.akkademy.messages.{SetRequest, GetRequest}
+import com.akkademy.messages.{GetRequest, SetRequest}
 
 import scala.concurrent.Future
 
@@ -17,7 +18,7 @@ class AskDemoArticleParser(cacheActorPath: String,
   val articleParserActor = context.actorSelection(acticleParserActorPath)
   import scala.concurrent.ExecutionContext.Implicits.global
 
-
+  val log = Logging(context.system, this)
   /**
    * Note there are 3 asks so this potentially creates 6 extra objects:
    * - 3 Promises
@@ -31,11 +32,14 @@ class AskDemoArticleParser(cacheActorPath: String,
       val cacheResult = cacheActor ? GetRequest(uri) //ask cache actor
 
       val result = cacheResult.recoverWith { //if request fails, then ask the articleParseActor
+
         case _: Exception =>
+          log.info("get exception")
           val fRawResult = httpClientActor ? uri
 
           fRawResult flatMap {
             case HttpResponse(rawArticle) =>
+              log.info("get the http response with uri: " + rawArticle.substring(1,100))
               articleParserActor ? ParseHtmlArticle(uri, rawArticle)
             case x =>
               Future.failed(new Exception("unknown response"))
@@ -49,6 +53,7 @@ class AskDemoArticleParser(cacheActorPath: String,
           println("cached result!")
           senderRef ! x //cached result
         case scala.util.Success(x: ArticleBody) =>
+          log.info("onComplete with the body {}", ArticleBody.toString())
           cacheActor ! SetRequest(uri, x.body)
           senderRef ! x
         case scala.util.Failure(t) =>
